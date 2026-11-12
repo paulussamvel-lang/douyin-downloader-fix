@@ -7,6 +7,30 @@ import re
 import shutil
 
 
+LIST_ACTIONS_MARKER = '/* douyin-downloader-fix: list-actions 1.1.3 */'
+
+
+def fix_list_actions(source):
+    """Keep the batch download controls visible in the outer panel scrollport."""
+    if LIST_ACTIONS_MARKER in source:
+        return source
+    if len(re.findall(r'^\.dy-dl-list-actions\s*\{', source, re.M)) != 1:
+        raise ValueError('Unsupported stylesheet: expected one list actions rule. No output created.')
+    newline = '\r\n' if '\r\n' in source else '\n'
+    override = '''
+/* douyin-downloader-fix: list-actions 1.1.3 */
+.dl-kit .dy-dl-list-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  padding: 10px 0;
+  background: var(--dl-bg);
+  border-top: 1px solid var(--dl-border);
+}
+'''
+    return source.rstrip('\r\n') + newline + override.replace('\n', newline)
+
+
 def fix_parser(source):
     """Prefer the active modal ID over the background video's pathname ID."""
     pattern = re.compile(
@@ -32,17 +56,20 @@ def build(source, output):
         raise ValueError('Source and output must be separate directories, not nested.')
     parser = source / 'lib' / 'aweme-parse.js'
     updated = fix_parser(parser.read_bytes().decode('utf-8'))
+    stylesheet = source / 'content' / 'content.css'
+    updated_css = fix_list_actions(stylesheet.read_bytes().decode('utf-8'))
     manifest = json.loads((source / 'manifest.json').read_text(encoding='utf-8'))
     if manifest.get('manifest_version') != 3:
         raise ValueError('Expected a Manifest V3 extension.')
     manifest['name'] = '抖音视频下载助手（弹窗识别修复版）'
     # Local derivative build marker; not an official upstream release number.
-    manifest['version'] = '1.1.2'
+    manifest['version'] = '1.1.3'
     manifest.pop('key', None)
     manifest.pop('update_url', None)
     shutil.copytree(source, output, ignore=shutil.ignore_patterns(
         '.git', '_metadata', 'node_modules', '.DS_Store', '*.crx', '*.zip'))
     (output / 'lib' / 'aweme-parse.js').write_bytes(updated.encode('utf-8'))
+    (output / 'content' / 'content.css').write_bytes(updated_css.encode('utf-8'))
     (output / 'manifest.json').write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     return output
